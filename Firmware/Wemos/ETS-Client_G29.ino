@@ -173,13 +173,9 @@ void ETS2Parser(String data)
   SpeedLimit(data);
   CruiseControl(data);
 
-  // brightness of leds
-  if(GetVal(data, "truck", "lightsBeamLowOn") == "true")
-    brightness = 900;
-  analogWrite(DIMMER, brightness);  
-  
   // handle LEDs
-  if(GetVal(data, "truck", "lightsBeamLowOn") == "true")
+  if(GetVal(data, "truck", "lightsBeamLowOn") == "true" ||
+     GetVal(data, "truck", "lightsParkingOn") == "true")
     leds |= (1<<LED_1);
   else
     leds &= ~(1<<LED_1); 
@@ -199,8 +195,8 @@ void ETS2Parser(String data)
   else
     leds &= ~(1<<LED_4); 
 
-  if(GetVal(data, "truck", "blinkerLeftActive") == "true" &&
-     GetVal(data, "truck", "blinkerRightActive") == "true")
+  if(GetVal(data, "truck", "blinkerLeftOn") == "true" &&
+     GetVal(data, "truck", "blinkerRightOn") == "true")
     leds |= (1<<LED_5);
   else
     leds &= ~(1<<LED_5); 
@@ -214,6 +210,21 @@ void ETS2Parser(String data)
     leds |= (1<<LED_7);
   else
     leds &= ~(1<<LED_7); 
+
+  if(GetVal(data, "truck", "wipersOn") == "true")
+    leds |= (1<<LED_8);
+  else
+    leds &= ~(1<<LED_8); 
+
+  if(GetVal(data, "truck", "motorBrakeOn") == "true")
+    leds |= (1<<LED_9);
+  else
+    leds &= ~(1<<LED_9); 
+
+  if(GetVal(data, "truck", "electricOn") == "true")
+    leds |= (1<<LED_10);
+  else
+    leds &= ~(1<<LED_10); 
 
   led_write(leds);
 }
