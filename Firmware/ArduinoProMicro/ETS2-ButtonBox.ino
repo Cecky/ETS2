@@ -31,6 +31,8 @@ Bounce BTN_13 = Bounce(CRUMB_PB2, 10);
 Bounce BTN_14 = Bounce(CRUMB_PB6, 10);
 
 boolean Startup_OK = false;
+boolean bFlag = false;
+unsigned long timer = 0;
 
 void setup()
 {
@@ -75,7 +77,6 @@ void loop()
 //############ falling edge #############
   if (BTN_1.fallingEdge() && Startup_OK) Joystick.button(1, PRESS);
   if (BTN_2.fallingEdge() && Startup_OK) Joystick.button(2, RELEASE);
-  if (BTN_3.fallingEdge() && Startup_OK) Joystick.button(3, RELEASE);
   if (BTN_4.fallingEdge() && Startup_OK) Joystick.button(4, PRESS);
   if (BTN_5.fallingEdge() && Startup_OK) Joystick.button(5, PRESS);
   if (BTN_6.fallingEdge() && Startup_OK) Joystick.button(6, PRESS);
@@ -91,7 +92,6 @@ void loop()
 //########### rising edge ###############
   if (BTN_1.risingEdge() && Startup_OK) Joystick.button(1, RELEASE);
   if (BTN_2.risingEdge() && Startup_OK) Joystick.button(2, PRESS);
-  if (BTN_3.risingEdge() && Startup_OK) Joystick.button(3, PRESS);
   if (BTN_4.risingEdge() && Startup_OK) Joystick.button(4, RELEASE);
   if (BTN_5.risingEdge() && Startup_OK) Joystick.button(5, RELEASE);
   if (BTN_6.risingEdge() && Startup_OK) Joystick.button(6, RELEASE);
@@ -104,6 +104,28 @@ void loop()
   if (BTN_13.risingEdge() && Startup_OK) Joystick.button(13, RELEASE);
   if (BTN_14.risingEdge() && Startup_OK) Joystick.button(14, RELEASE);
 
+//########### special case (engine electric) ###############
+
+  if (Startup_OK && (timer + 500) > millis())
+  {
+    Joystick.button(3, RELEASE);
+    bFlag = false;
+  }
+
+  if (BTN_3.fallingEdge() && Startup_OK)
+  {
+    Joystick.button(3, PRESS);
+    timer = millis();
+    bFlag = true;
+  }
+  
+  if (BTN_3.risingEdge() && Startup_OK)
+  {
+    Joystick.button(3, PRESS);
+    timer = millis();
+    bFlag = true;
+  }
+  
   Joystick.send_now();
 }
 
