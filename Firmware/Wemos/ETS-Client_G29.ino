@@ -22,6 +22,7 @@
 
 ESP8266WiFiMulti WiFiMulti;
 boolean isETS2 = true;
+uint16_t led_oldstate = 0;
 //#define USE_SERIAL            Serial
 
 /********************************************
@@ -226,7 +227,11 @@ void ETS2Parser(String data)
   else
     leds &= ~(1<<LED_10); 
 
-  led_write(leds);
+  if(leds != led_oldstate)
+  {
+    led_oldstate = leds;
+    led_write(leds);
+  }
 }
 
 /********************************************
