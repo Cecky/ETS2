@@ -20,6 +20,10 @@
 #define LED_CS          D0
 #define DIMMER          D3
 
+#define HOUR_DUSK       19
+#define HOUR_DAWN       5
+#define PWM_DARK        900
+
 ESP8266WiFiMulti WiFiMulti;
 boolean isETS2 = true;
 uint16_t led_oldstate = 0;
@@ -47,14 +51,13 @@ void led_write(uint16_t data)
 /********************************************
  * parse json                               *
  *******************************************/
-void SpeedLimit(String data)
+void SpeedLimit(String SpeedLimit)
 {
   static int oldLimit = 0;
   unsigned long currentMillis = millis();
   static unsigned long previousMillis = 0;
   static uint8_t ledState = 0;
   static uint8_t cnt = 0;
-  String SpeedLimit = GetVal(data, "navigation", "speedLimit");
   int actLimit = SpeedLimit.toFloat();
   if(!isETS2) actLimit = round(SpeedLimit.toFloat() * 0.621);
 
@@ -90,11 +93,8 @@ void SpeedLimit(String data)
   }
 }
 
-void CruiseControl(String data)
+void CruiseControl(String CruiseControlOn, String CruiseControlSpeed, String EngineRPM)
 {
-  String CruiseControlOn = GetVal(data, "truck", "cruiseControlOn");
-  String CruiseControlSpeed = GetVal(data, "truck", "cruiseControlSpeed");
-  String EngineRPM = GetVal(data, "truck", "engineRpm");
   int rpm = 0;
   int rpm_01 = 0;
   int rpm_10 = 0;
@@ -122,9 +122,8 @@ void CruiseControl(String data)
   }
 }
 
-void Speed(String data)
+void Speed(String Speed)
 {
-  String Speed = GetVal(data, "truck", "speed");
   int TruckSpeed = Speed.toFloat();
   if(!isETS2) TruckSpeed = round(Speed.toFloat() * 0.621);
   if(TruckSpeed < 0) TruckSpeed = TruckSpeed * (-1);
@@ -136,6 +135,33 @@ void Speed(String data)
   max7219_write(DIGIT_6, speed_100);
   max7219_write(DIGIT_2, speed_010);
   max7219_write(DIGIT_3, speed_001);
+}
+
+uint16_t GametimeToLED (String Gametime)
+{
+  // stringformat: 0001-01-08T21:09:00Z
+  uint8_t hour = Gametime.substring(11,13).toFloat();
+  uint8_t minute = Gametime.substring(14,16).toFloat();
+  uint16_t retval = 0;
+
+  if(hour < HOUR_DAWN) retval = PWM_DARK;
+
+  if(hour >= HOUR_DAWN && hour < HOUR_DUSK)
+  {
+    retval = (hour - HOUR_DAWN) * 600;
+    retval += minute * 10;
+    if(retval > PWM_DARK) retval = PWM_DARK;
+    retval = PWM_DARK - retval;
+  }
+
+  if(hour >= HOUR_DUSK && hour <= 23)
+  {
+    retval = (hour - HOUR_DUSK) * 600;
+    retval += minute * 10;
+    if(retval > PWM_DARK) retval = PWM_DARK;
+  }
+
+  return retval;
 }
 
 String GetVal(String data, String object, String element)
@@ -163,6 +189,7 @@ String GetVal(String data, String object, String element)
 
 void ETS2Parser(String data)
 {
+  String p1, p2, p3;
   uint16_t leds = 0;
   uint16_t brightness = 0;
  
@@ -170,10 +197,21 @@ void ETS2Parser(String data)
     isETS2 = false;
   else
     isETS2 = true; 
-  Speed(data);
-  SpeedLimit(data);
-  CruiseControl(data);
 
+  p1 = GetVal(data, "truck", "speed");
+  Speed(p1);
+
+  p1 = GetVal(data, "navigation", "speedLimit");
+  SpeedLimit(p1);
+
+  p1 = GetVal(data, "truck", "cruiseControlOn");
+  p2 = GetVal(data, "truck", "cruiseControlSpeed");
+  p3 = GetVal(data, "truck", "engineRpm");
+  CruiseControl(p1, p2, p3);
+  
+  p1 = (GetVal(data, "game", "time"));
+  brightness = GametimeToLED(p1);
+  
   // handle LEDs
   if(GetVal(data, "truck", "lightsBeamLowOn") == "true" ||
      GetVal(data, "truck", "lightsParkingOn") == "true")
@@ -232,6 +270,7 @@ void ETS2Parser(String data)
     led_oldstate = leds;
     led_write(leds);
   }
+  analogWrite(DIMMER, brightness);
 }
 
 /********************************************
@@ -241,15 +280,16 @@ void setup()
 {
 #ifdef USE_SERIAL
   USE_SERIAL.begin(115200);
+  USE_SERIAL.println("ETS2 Telemetry-Client V1.0");
   USE_SERIAL.println();
 #endif
   WiFiMulti.addAP(SSID, PWD);
-  delay(1000);
   pinMode(DASHBOARD_CS, OUTPUT);
   digitalWrite(DASHBOARD_CS, HIGH);
   pinMode(LED_CS, OUTPUT);
   digitalWrite(LED_CS, HIGH);
   pinMode(DIMMER, OUTPUT);
+  delay(1000); 
   SPI.begin ();
   SPI.setClockDivider(SPI_CLOCK_DIV16);
   max7219_write(SCAN_LIMIT,0x06);
@@ -267,7 +307,7 @@ void loop()
 
     //USE_SERIAL.print("[HTTP] begin...\n");
     // configure traged server and url
-    http.begin("http://192.168.2.106:25555/api/ets2/telemetry"); //HTTP
+    http.begin("http://192.168.2.110:25555/api/ets2/telemetry"); //HTTP
 
     //USE_SERIAL.print("[HTTP] GET...\n");
     // start connection and send HTTP header
@@ -295,4 +335,3 @@ void loop()
     http.end();
   }
 }
-
