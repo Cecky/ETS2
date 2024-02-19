@@ -12,26 +12,58 @@
 #include <ESP8266WiFiMulti.h>
 #include <ESP8266HTTPClient.h>
 #include <SPI.h>
+#include <Ticker.h>
 #include "max7219.h"
 #include "led.h"
 #include "credentials.h"
 
+#define CONN_STRING     "http://192.168.2.107:25555/api/telemetry"
 #define DASHBOARD_CS    D4
 #define LED_CS          D0
 #define DIMMER          D3
 
-#define HOUR_DUSK       19
+#define HOUR_DUSK       20
 #define HOUR_DAWN       5
 #define PWM_DARK        900
 
 ESP8266WiFiMulti WiFiMulti;
+Ticker tick;
 boolean isETS2 = true;
 uint16_t led_oldstate = 0;
+WiFiClient client;
+HTTPClient http;
+String data;
+
 //#define USE_SERIAL            Serial
 
 /********************************************
  * SPI                                      *
  *******************************************/
+void max7219_init()
+{
+  digitalWrite(DASHBOARD_CS, LOW);
+  SPI.transfer(NO_OP);
+  SPI.transfer(NO_OP);
+  SPI.transfer(NO_OP);
+  SPI.transfer(NO_OP);
+  digitalWrite(DASHBOARD_CS, HIGH);
+}
+
+void max7219_welcome()
+{
+  for(uint8_t i = 0; i < 11; i++)
+  {
+    max7219_write(DIGIT_0, i % 10);
+    max7219_write(DIGIT_1, i % 10);
+    max7219_write(DIGIT_2, i % 10);
+    max7219_write(DIGIT_3, i % 10);
+    max7219_write(DIGIT_4, i % 10);
+    max7219_write(DIGIT_5, i % 10);
+    max7219_write(DIGIT_6, i % 10);
+    delay(75);
+  }
+}
+
 void max7219_write(char command, char data)
 {
   digitalWrite(DASHBOARD_CS, LOW);
@@ -46,6 +78,17 @@ void led_write(uint16_t data)
   SPI.transfer(data>>8);
   SPI.transfer(data & 0xFF);
   digitalWrite(LED_CS, HIGH);
+}
+
+void led_test(uint8_t loops)
+{
+  for(uint8_t i = 0; i < loops; i++)
+  {
+      led_write(0xffff);
+      delay(250);
+      led_write(0x0000);
+      delay(250);
+  }
 }
 
 /********************************************
@@ -140,6 +183,8 @@ void Speed(String Speed)
 uint16_t GametimeToLED (String Gametime)
 {
   // stringformat: 0001-01-08T21:09:00Z
+  // retval: 0   = Max hell
+  // retval: 900 = Max gedimmt
   uint8_t hour = Gametime.substring(11,13).toFloat();
   uint8_t minute = Gametime.substring(14,16).toFloat();
   uint16_t retval = 0;
@@ -187,7 +232,7 @@ String GetVal(String data, String object, String element)
   return val;
 }
 
-void ETS2Parser(String data)
+void ETS2Parser()
 {
   String p1, p2, p3;
   uint16_t leds = 0;
@@ -271,6 +316,7 @@ void ETS2Parser(String data)
     led_write(leds);
   }
   analogWrite(DIMMER, brightness);
+  max7219_write(INTENSITY, 0x0F - (brightness/75));
 }
 
 /********************************************
@@ -280,7 +326,7 @@ void setup()
 {
 #ifdef USE_SERIAL
   USE_SERIAL.begin(115200);
-  USE_SERIAL.println("ETS2 Telemetry-Client V1.0");
+  USE_SERIAL.println("ETS2 Telemetry-Client V1.1");
   USE_SERIAL.println();
 #endif
   WiFiMulti.addAP(SSID, PWD);
@@ -289,13 +335,24 @@ void setup()
   pinMode(LED_CS, OUTPUT);
   digitalWrite(LED_CS, HIGH);
   pinMode(DIMMER, OUTPUT);
-  delay(1000); 
+  analogWriteRange(1023);   //stupid new framework defaults to 256!
+  tick.attach_ms(200, ETS2Parser);
+  delay(200); 
   SPI.begin ();
   SPI.setClockDivider(SPI_CLOCK_DIV16);
+  delay(200); 
+  max7219_init();
+  delay(200); 
   max7219_write(SCAN_LIMIT,0x06);
   max7219_write(INTENSITY,START_INTENSITY);
   max7219_write(DECODE_MODE, 0xFF);
   max7219_write(SHUTDOWN,DISP_ON);
+  delay(200); 
+  max7219_welcome();
+  led_test(5);
+#ifdef USE_SERIAL
+  USE_SERIAL.println("[SETUP] OK");
+#endif
 }
 
 void loop()
@@ -303,11 +360,7 @@ void loop()
   // wait for WiFi connection
   if((WiFiMulti.run() == WL_CONNECTED))
   {
-    HTTPClient http;
-
-    //USE_SERIAL.print("[HTTP] begin...\n");
-    // configure traged server and url
-    http.begin("http://192.168.2.110:25555/api/ets2/telemetry"); //HTTP
+    http.begin(client, CONN_STRING); //HTTP
 
     //USE_SERIAL.print("[HTTP] GET...\n");
     // start connection and send HTTP header
@@ -322,8 +375,7 @@ void loop()
       // file found at server
       if(httpCode == HTTP_CODE_OK)
       {
-        String payload = http.getString();
-        ETS2Parser(payload);
+        data = http.getString();
       }
     }
     else
